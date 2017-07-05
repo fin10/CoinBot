@@ -7,13 +7,15 @@ from enum import Enum
 import numpy as np
 import tensorflow as tf
 
+# os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+tf.logging.set_verbosity(tf.logging.INFO)
+
 
 class CoinAgent:
     class Action(Enum):
-        NOTHING = 0,
-        BUY = 1,
-        SELL = 2,
-        SIZE = 3
+        NOTHING = 0
+        BUY = 1
+        SELL = 2
 
     def __init__(self, params):
         self.epsilon = params['epsilon']
@@ -32,27 +34,28 @@ class CoinAgent:
             },
         )
 
-    def input_fn(self, orders, target=None):
+    def input_fn(self, orders, target=[0.0 for _ in range(len(list(Action)))]):
+        if self.max_length < len(orders):
+            orders = orders[len(orders) - self.max_length:]
+
         data = []
-        first_time = 0
+        first_time = float(orders[0]['timestamp'])
+
         for order in orders:
-            price = int(order['price'])
+            price = float(order['price'])
             qty = float(order['qty'])
-            timestamp = int(order['timestamp'])
-            if first_time == 0:
-                first_time = timestamp
-            timestamp = timestamp - first_time
+            timestamp = float(order['timestamp']) - first_time
             data.append([price, qty, timestamp])
 
         if self.max_length > len(data):
-            data = np.pad(data, (0, self.max_length - len(data)), 'constant')
-        else:
-            data = np.array(data[len(data) - self.max_length:])
+            for _ in range(self.max_length - len(data)):
+                data.append([0.0, 0.0, 0.0])
 
         inputs = {
-            'state': tf.constant(np.pad(data, (0, self.max_length - len(data)), 'constant'))
+            'state': tf.constant(data)
         }
-        target = tf.constant(target, dtype=tf.float64)
+
+        target = tf.constant(target, dtype=tf.float32)
 
         return inputs, target
 
@@ -61,7 +64,7 @@ class CoinAgent:
         state = features['state']
         hidden_units = params['hidden_units']
         learning_rate = params['learning_rate']
-        num_outputs = cls.Action.SIZE.value
+        num_outputs = len(list(cls.Action))
 
         state = tf.stack([state])
         target = tf.stack([target])
@@ -78,8 +81,10 @@ class CoinAgent:
             num_outputs=num_outputs,
         )
 
-        loss = tf.square(target - q)
-        loss = tf.reduce_sum(loss)
+        loss = tf.losses.softmax_cross_entropy(
+            onehot_labels=target,
+            logits=q,
+        )
 
         train_op = None
         if mode == tf.contrib.learn.ModeKeys.TRAIN:
@@ -100,7 +105,6 @@ class CoinAgent:
         return tf.contrib.learn.ModelFnOps(
             mode=mode,
             predictions={
-                'action_idx': tf.argmax(q),
                 'action_dist': q
             },
             loss=loss,
@@ -108,20 +112,24 @@ class CoinAgent:
         )
 
     def select(self, dataset, step: int):
-        threshold = min(self.epsilon, step / 1000.0)
+        threshold = min(self.epsilon, step / 100.0)
         if threshold > random.random():
             prediction = self.estimator.predict(
                 input_fn=lambda: self.input_fn(dataset)
             )
 
-            return self.Action(prediction['action_idx'])
+            prediction = list(prediction)[0]['action_dist']
+            idx = np.argmax(prediction)
+
+            return self.Action(idx)
         else:
             return random.choice(list(self.Action))
 
     def update(self, current, next, reward):
         if not os.path.exists('./model'):
             self.estimator.fit(
-                input_fn=lambda: self.input_fn(current, [0.0 for _ in range(self.Action.SIZE.value)])
+                input_fn=lambda: self.input_fn(current),
+                steps=1
             )
         else:
             action = self.estimator.predict(
@@ -131,11 +139,15 @@ class CoinAgent:
                 input_fn=lambda: self.input_fn(next)
             )
 
-            idx = next_action['action_idx']
-            action['action_dist'][idx] = reward + self.gamma * next_action['action_dist'][idx]
+            action = list(action)[0]['action_dist']
+            next_action = list(next_action)[0]['action_dist']
+
+            idx = np.argmax(next_action)
+            action[idx] = reward + self.gamma * next_action[idx]
 
             self.estimator.fit(
-                input_fn=lambda: self.input_fn(current, action['action_dist'])
+                input_fn=lambda: self.input_fn(current, action),
+                steps=1
             )
 
 
@@ -162,7 +174,7 @@ if __name__ == '__main__':
         'gamma': 0.01,
         'hidden_units': 50,
         'learning_rate': 0.01,
-        'gpu_memory': 1.0,
+        'gpu_memory': 0.1,
         'max_length': 12000
     })
 
@@ -180,9 +192,10 @@ if __name__ == '__main__':
         action = agent.select(orders, idx)
         coin_value = int(orders[-1]['price'])
 
-        if action == CoinAgent.Action.BUY and budget >= coin_value:
-            num_coins = (budget / coin_value) * (1 - commission)
-            budget -= int(num_coins * coin_value)
+        if action == CoinAgent.Action.BUY and budget > 0:
+            bought = (budget / coin_value) * (1 - commission)
+            budget -= int(bought * coin_value)
+            num_coins += bought
         elif action == CoinAgent.Action.SELL and num_coins > 0:
             budget += int(num_coins * coin_value * (1 - commission))
             num_coins = 0
@@ -195,9 +208,8 @@ if __name__ == '__main__':
 
         agent.update(orders, next_orders, reward)
 
-        if idx % 10 == 0:
-            print('# #%d Portfolio: %f, Budget: %d, Coin: %f(%d)' %
-                  (idx, (budget + num_coins * coin_value), budget, num_coins, coin_value))
+        print('#%d (%s), Portfolio: %f, Budget: %d, Coin: %f(%d)' %
+              (idx, action, (budget + num_coins * coin_value), budget, num_coins, coin_value))
 
     print('# Result')
     print('# Portfolio: %f' % (budget + num_coins * coin_value))
