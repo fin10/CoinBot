@@ -30,7 +30,7 @@ class CoinAgent:
             model_dir='./model',
             config=tf.contrib.learn.RunConfig(
                 gpu_memory_fraction=params['gpu_memory'],
-                save_checkpoints_secs=30,
+                save_checkpoints_secs=60,
             ),
             params={
                 'hidden_units': params['hidden_units'],
@@ -50,7 +50,7 @@ class CoinAgent:
 
         if self.max_length > len(data):
             for _ in range(self.max_length - len(data)):
-                data.append([0.0, 0.0])
+                data.insert(0, [0.0, 0.0])
 
         inputs = {
             'state': tf.constant(data)
@@ -66,6 +66,8 @@ class CoinAgent:
         hidden_units = params['hidden_units']
         learning_rate = params['learning_rate']
 
+        state = tf.nn.l2_normalize(state, 0)
+
         outputs = tf.contrib.layers.fully_connected(
             inputs=state,
             num_outputs=hidden_units,
@@ -80,15 +82,10 @@ class CoinAgent:
 
         q = tf.reshape(q, [-1])
 
-        # loss = tf.losses.softmax_cross_entropy(
-        #     onehot_labels=target,
-        #     logits=q,
-        # )
-
-        loss = tf.reduce_sum(tf.square(target - q))
-
+        loss = None
         train_op = None
         if mode == tf.contrib.learn.ModeKeys.TRAIN:
+            loss = tf.reduce_sum(tf.square(target - q))
             train_op = tf.contrib.layers.optimize_loss(
                 loss=loss,
                 global_step=tf.contrib.framework.get_global_step(),
@@ -103,21 +100,29 @@ class CoinAgent:
             train_op=train_op
         )
 
-    def select(self, state, step: int):
-        threshold = min(self.epsilon, step / 100.0)
-        if threshold > random.random():
-            return list(self.estimator.predict(
+    def select(self, state):
+        action_dist = [0.0 for _ in range(self.num_outputs)]
+
+        if os.path.exists('./model'):
+            action_dist = list(self.estimator.predict(
                 input_fn=lambda: self.input_fn(state)
             ))
-        else:
-            print('#%d random pick' % step)
-            result = [0 for _ in range(self.num_outputs)]
-            result[random.randint(0, len(result) - 1)] = 1
-            return result
 
-    def update(self, reward, current_state, current_action_dist, next_action):
-        idx = np.argmax(next_action)
-        current_action_dist[idx] = reward + self.gamma * next_action[idx]
+        if np.sum(action_dist) == 0 or random.random() > self.epsilon:
+            print('random pick %s' % action_dist)
+            action_dist = [random.random() for _ in range(self.num_outputs)]
+
+        return action_dist
+
+    def update(self, reward, current_state, current_action_dist, next_action_dist):
+        if reward > 0:
+            reward = 1.0
+        elif reward < 0:
+            reward = -1.0
+
+        idx = np.argmax(current_action_dist)
+        current_action_dist[idx] = reward + self.gamma * np.max(next_action_dist)
+        print('update %s' % current_action_dist)
 
         self.estimator.fit(
             input_fn=lambda: self.input_fn(current_state, current_action_dist),
@@ -136,7 +141,7 @@ class CoinAgent:
                 orders = json.load(fp)['orders']
 
             portfolio = budget + num_coins * coin_value
-            action_dist = self.select(orders, idx)
+            action_dist = self.select(orders)
             action = CoinAgent.Action(np.argmax(action_dist))
 
             coin_value = int(orders[-1]['price'])
@@ -154,7 +159,7 @@ class CoinAgent:
             next_state = trade_files[idx + 1]
             with open(next_state) as fp:
                 next_orders = json.load(fp)['orders']
-            next_action_dist = self.select(next_orders, idx)
+            next_action_dist = self.select(next_orders)
 
             self.update(reward, orders, action_dist, next_action_dist)
 
@@ -196,7 +201,7 @@ if __name__ == '__main__':
         'max_length': 12000
     })
 
-    trial = 50
+    trial = 1
     results = []
     for idx in range(trial):
         result = agent.train(files)
