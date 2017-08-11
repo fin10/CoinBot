@@ -36,23 +36,33 @@ class CoinAgent:
 
             with tf.variable_scope(name):
                 self.__inputs = tf.placeholder(tf.float32, [None, input_size, self.__feature_size], name='inputs')
-                self.__lengths = tf.placeholder(tf.float32, [None], name='lengths')
+                self.__lengths = tf.placeholder(tf.int32, [None], name='lengths')
                 self.__masks = tf.placeholder(tf.float32, [None, input_size], name='masks')
                 self.__targets = tf.placeholder(tf.float32, [None, output_size], name='targets')
                 self.global_step = tf.Variable(0, name='global_step', trainable=False)
 
-                outputs = tf.contrib.layers.fully_connected(
+                def make_cell(size):
+                    cell = tf.contrib.rnn.GRUCell(size)
+                    cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=0.5)
+                    return cell
+
+                cell_fw = tf.contrib.rnn.MultiRNNCell([make_cell(hidden_units) for _ in range(3)])
+                cell_bw = tf.contrib.rnn.MultiRNNCell([make_cell(hidden_units) for _ in range(3)])
+
+                activations, _ = tf.nn.bidirectional_dynamic_rnn(
+                    cell_fw=cell_fw,
+                    cell_bw=cell_bw,
                     inputs=self.__inputs,
-                    num_outputs=hidden_units,
-                    scope='h1',
+                    sequence_length=self.__lengths,
+                    dtype=tf.float32
                 )
 
-                outputs = tf.reshape(outputs, [-1, input_size * hidden_units])
+                activations = activations[0] + activations[1]
+                outputs = tf.reshape(activations, [-1, input_size * hidden_units])
 
                 outputs = tf.contrib.layers.fully_connected(
                     inputs=outputs,
                     num_outputs=output_size,
-                    scope='h2',
                 )
 
                 self.__q = tf.nn.softmax(logits=outputs)
@@ -166,7 +176,7 @@ class CoinAgent:
         with tf.Session() as sess:
             mainDqn = cls.DQN('main', sess, params)
             targetDqn = cls.DQN('target', sess, params)
-            saver = tf.train.Saver(tf.global_variables())
+            saver = tf.train.Saver(tf.global_variables(), max_to_keep=100)
 
             if not os.path.exists('./model'):
                 os.mkdir('./model')
@@ -193,7 +203,7 @@ class CoinAgent:
                     action_dist = mainDqn.predict(state)
                     action_max_idx = np.argmax(action_dist)
 
-                    if random.random() < e:
+                    if random.random() > e:
                         action = CoinAgent.Action(action_max_idx)
                     else:
                         action = random.choice(cls.actions)
@@ -259,7 +269,7 @@ if __name__ == '__main__':
         'budget': 10000,
         'num_coins': 0,
         'coin_value': 0,
-        'e': 0.9,
+        'e': 0.1,
         'r': 0.9,
         'gpu_memory': 0.1,
         'max_length': 12000,
