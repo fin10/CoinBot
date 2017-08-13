@@ -39,7 +39,7 @@ class CoinAgent:
                 self.__lengths = tf.placeholder(tf.int32, [None], name='lengths')
                 self.__masks = tf.placeholder(tf.float32, [None, input_size], name='masks')
                 self.__targets = tf.placeholder(tf.float32, [None, output_size], name='targets')
-                self.global_step = tf.Variable(0, name='global_step', trainable=False)
+                self.__global_step = tf.Variable(0, name='global_step', trainable=False)
 
                 def make_cell(size):
                     cell = tf.contrib.rnn.GRUCell(size)
@@ -48,8 +48,6 @@ class CoinAgent:
 
                 cell_fw = tf.contrib.rnn.MultiRNNCell([make_cell(hidden_units) for _ in range(2)])
                 cell_bw = tf.contrib.rnn.MultiRNNCell([make_cell(hidden_units) for _ in range(2)])
-                # cell_fw = make_cell(hidden_units)
-                # cell_bw = make_cell(hidden_units)
 
                 activations, _ = tf.nn.bidirectional_dynamic_rnn(
                     cell_fw=cell_fw,
@@ -70,10 +68,14 @@ class CoinAgent:
                 self.__loss = tf.reduce_sum(tf.square(self.__targets - self.__q))
                 self.__train = tf.contrib.layers.optimize_loss(
                     loss=self.__loss,
-                    global_step=self.global_step,
+                    global_step=self.__global_step,
                     learning_rate=learning_rate,
                     optimizer='Adam'
                 )
+
+                tf.summary.scalar('loss', self.__loss)
+                tf.summary.scalar('step', self.__global_step)
+                self.__merged = tf.summary.merge_all()
 
         def __build_inputs(self, states):
             input_size = self.__params['max_length']
@@ -118,14 +120,15 @@ class CoinAgent:
 
         def update(self, states, targets):
             inputs = self.__build_inputs(states)
-            loss, _ = self.__sess.run([self.__loss, self.__train], feed_dict={
-                self.__inputs: inputs['inputs'],
-                self.__lengths: inputs['lengths'],
-                self.__masks: inputs['masks'],
-                self.__targets: targets
-            })
+            summary, loss, step, _ = self.__sess.run([self.__merged, self.__loss, self.__global_step, self.__train],
+                                                     feed_dict={
+                                                         self.__inputs: inputs['inputs'],
+                                                         self.__lengths: inputs['lengths'],
+                                                         self.__masks: inputs['masks'],
+                                                         self.__targets: targets
+                                                     })
 
-            return loss
+            return summary, loss, step
 
     def __init__(self, params):
         self.commission = params['commission']
@@ -170,7 +173,6 @@ class CoinAgent:
     def train(cls, trade_files, params):
         e = params['e']
         r = params['r']
-        sample_size = 100
 
         states = []
         print('Loading dataset...')
@@ -186,6 +188,7 @@ class CoinAgent:
             main_dqn = cls.DQN('main', sess, params)
             target_dqn = cls.DQN('target', sess, params)
             saver = tf.train.Saver(tf.global_variables(), max_to_keep=50)
+            writer = tf.summary.FileWriter('./model', sess.graph)
 
             ckpt = tf.train.get_checkpoint_state('./model')
             if ckpt and tf.train.checkpoint_exists(ckpt.model_checkpoint_path):
@@ -196,13 +199,14 @@ class CoinAgent:
                 sess.run(tf.global_variables_initializer())
 
             print('Training starts.')
-            sess.run(cls.__get_copy_op(main_dqn, target_dqn))
 
             result = {}
             trial = 50
+            sample_size = 500
             for step in range(trial):
                 agent = cls(params)
                 queue = deque(maxlen=sample_size)
+                sess.run(cls.__get_copy_op(main_dqn, target_dqn))
 
                 for idx in range(len(states)):
                     queue.append(states[idx])
@@ -225,20 +229,20 @@ class CoinAgent:
                                 action_dists[i][action_max_index] = rewards[i] + r * nex_action_maxes[i]
 
                         print('Updating...')
-                        sample_indices = random.choices([i for i in range(len(queue))], k=int(sample_size/4))
+                        sample_indices = random.choices([i for i in range(len(queue))], k=int(sample_size * 0.1))
                         samples = (
                             [queue[index] for index in sample_indices],
                             [action_dists[index] for index in sample_indices]
                         )
 
-                        loss = main_dqn.update(samples[0], samples[1])
-                        print('[%d] Loss: %f, Portfolio: %f' % (idx, loss, agent.__get_portfolio()))
+                        summary, loss, global_step = main_dqn.update(samples[0], samples[1])
+                        writer.add_summary(summary, global_step=global_step)
+                        print('[{}] Loss: {:,.2f}, Portfolio: {:,.2f}'.format(idx, loss, agent.__get_portfolio()))
 
-                        sess.run(cls.__get_copy_op(main_dqn, target_dqn))
-                        saver.save(sess, os.path.join('./model', 'coin_agent.ckpt'), global_step=main_dqn.global_step)
+                        saver.save(sess, os.path.join('./model', 'coin_agent.ckpt'), global_step=global_step)
 
                         result = {
-                            'step': tf.train.global_step(sess, main_dqn.global_step),
+                            'step': global_step,
                             'loss': loss,
                             'portfolio': agent.__get_portfolio(),
                             'budget': agent.budget,
@@ -250,9 +254,9 @@ class CoinAgent:
                     os.mkdir('./out')
 
                 with open('./out/portfolio.txt', mode='a') as fp:
-                    msg = '#%d Loss: %f, Portfolio: %f, Budget: %d, Coin: %f(%d)' % \
-                                  (result['step'], result['loss'],
-                                   result['portfolio'], result['budget'], result['num_coins'], result['coin_value'])
+                    msg = '#{:<4} Loss: {:>20,.2f}, Portfolio: {:>15,.2f}, Budget: {}, Coin: {}({})'.format(
+                        result['step'], result['loss'],
+                        result['portfolio'], result['budget'], result['num_coins'], result['coin_value'])
                     fp.write(msg + '\n')
                     print(msg)
 
@@ -277,13 +281,12 @@ if __name__ == '__main__':
 
     CoinAgent.train(files, params={
         'commission': 0.0015,
-        'budget': 1000000,
+        'budget': 10000000,
         'num_coins': 0,
         'coin_value': 0,
         'e': 0.1,
         'r': 0.9,
-        'gpu_memory': 0.1,
-        'max_length': 12000,
+        'max_length': 10000,
         'hidden_units': 50,
-        'learning_rate': 0.01,
+        'learning_rate': 0.1,
     })
