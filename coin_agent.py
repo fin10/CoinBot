@@ -71,6 +71,7 @@ class CoinAgent:
                     num_outputs=hidden_units,
                 )
 
+                outputs = tf.nn.dropout(outputs, keep_prob=self.__keep_prob)
                 outputs = tf.reshape(outputs, [-1, input_size * hidden_units])
 
                 self.__q = tf.contrib.layers.fully_connected(
@@ -215,7 +216,9 @@ class CoinAgent:
             main_dqn = cls.DQN('main', sess, params)
             target_dqn = cls.DQN('target', sess, params)
             copy_ops = cls.__get_copy_op(main_dqn, target_dqn)
-            saver = tf.train.Saver(tf.global_variables(), max_to_keep=50)
+            saver = tf.train.Saver(tf.global_variables(),
+                                   # max_to_keep=50
+                                   )
             writer = tf.summary.FileWriter('./model', sess.graph)
 
             ckpt = tf.train.get_checkpoint_state('./model')
@@ -227,7 +230,6 @@ class CoinAgent:
                 sess.run(tf.global_variables_initializer())
 
             print('Training starts.')
-            sess.run(copy_ops)
 
             result = {}
             trial = 50
@@ -236,6 +238,9 @@ class CoinAgent:
             for _ in range(trial):
                 agent = cls(params)
                 queue = deque(maxlen=sample_size)
+
+                sess.run(copy_ops)
+                print('Models copied.')
 
                 for idx in range(len(states)):
                     queue.append(states[idx])
@@ -262,14 +267,10 @@ class CoinAgent:
                             [action_dists[index] for index in sample_indices]
                         )
 
-                        print('Updating...')
+                        # print('Updating...')
                         summary, loss, global_step = main_dqn.update(samples[0], samples[1])
                         writer.add_summary(summary, global_step=global_step)
                         print('[{}] Loss: {:,.2f}, Portfolio: {:,.2f}'.format(idx, loss, agent.__get_portfolio()))
-
-                        if global_step > 0 and global_step % 20 == 0:
-                            sess.run(copy_ops)
-                            print('Copied models.')
 
                         saver.save(sess, os.path.join('./model', 'coin_agent.ckpt'), global_step=global_step)
 
@@ -291,7 +292,7 @@ class CoinAgent:
                     actions = [CoinAgent.Action(index) for index in action_max_indices]
                     test_agent.__step(states, actions)
 
-                    msg = '#{:<4} Loss: {:>15,.4f}, Portfolio: {:>15,.2f}, {}'.format(
+                    msg = '#{:<4} Loss: {:>20,.2f}, Portfolio: {:>15,.2f}, {}'.format(
                         result['step'], result['loss'], test_agent.__get_portfolio(), Counter(actions))
                     fp.write(msg + '\n')
                     print(msg)
@@ -326,5 +327,5 @@ if __name__ == '__main__':
         'hidden_units': 100,
         'learning_rate': 0.01,
         'sample_size': 500,
-        'batch_size': 100
+        'batch_size': 200
     })
