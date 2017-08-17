@@ -5,6 +5,8 @@ import json
 import os
 
 import boto3
+import botocore.exceptions
+import time
 from boto3.dynamodb.conditions import Attr
 
 
@@ -50,10 +52,16 @@ class CoinTrade:
                     fp.write(json.dumps(item, cls=self._DecimalEncoder))
 
             if 'LastEvaluatedKey' in response:
-                response = trades_table.scan(
-                    FilterExpression=Attr('currency').eq(currency),
-                    ExclusiveStartKey=response['LastEvaluatedKey']
-                )
+                while True:
+                    try:
+                        response = trades_table.scan(
+                            FilterExpression=Attr('currency').eq(currency),
+                            ExclusiveStartKey=response['LastEvaluatedKey']
+                        )
+                        break
+                    except botocore.exceptions.ClientError as e:
+                        print(e)
+                        time.sleep(5)
             else:
                 break
         print('Total (%d)' % total)
