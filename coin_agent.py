@@ -14,9 +14,9 @@ import tensorflow as tf
 
 class CoinAgent:
     class Action(Enum):
-        NOTHING = 0
-        BUY = 1
-        SELL = 2
+        BUY = 0
+        SELL = 1
+        NOTHING = 2
 
     actions = list(Action)
 
@@ -58,20 +58,19 @@ class CoinAgent:
                 # )
                 #
                 # activations = activations[0] + activations[1]
-                # outputs = tf.reshape(outputs, [-1, input_size * hidden_units])
-
-                # for _ in range(10):
-                #     outputs = tf.contrib.layers.fully_connected(
-                #         inputs=outputs,
-                #         num_outputs=output_size,
-                #     )
 
                 outputs = tf.contrib.layers.fully_connected(
                     inputs=self.__inputs,
                     num_outputs=hidden_units,
                 )
 
-                outputs = tf.nn.dropout(outputs, keep_prob=self.__keep_prob)
+                for _ in range(3):
+                    outputs = tf.contrib.layers.fully_connected(
+                        inputs=outputs,
+                        num_outputs=hidden_units,
+                    )
+                    outputs = tf.nn.dropout(outputs, keep_prob=self.__keep_prob)
+
                 outputs = tf.reshape(outputs, [-1, input_size * hidden_units])
 
                 self.__q = tf.contrib.layers.fully_connected(
@@ -79,6 +78,8 @@ class CoinAgent:
                     num_outputs=output_size,
                     activation_fn=None
                 )
+
+                self.__q = tf.nn.softmax(self.__q)
 
                 learning_rate = tf.train.exponential_decay(
                     learning_rate=learning_rate,
@@ -110,9 +111,16 @@ class CoinAgent:
             inputs = []
             for state in states:
                 data = []
+                base_price = -1
                 for transaction in state:
                     price = float(transaction['price'])
                     qty = float(transaction['qty'])
+                    if base_price < 0:
+                        base_price = price
+                        price = 0.0
+                    else:
+                        price = (price - base_price) / base_price
+
                     data.append([price, qty])
 
                 if input_size > len(data):
@@ -130,13 +138,13 @@ class CoinAgent:
         def name(self):
             return self.__name
 
-        def predict(self, states):
+        def predict(self, states, keep_prob=1.0):
             inputs = self.__build_inputs(states)
 
             return list(self.__sess.run(self.__q, feed_dict={
                 self.__inputs: inputs['inputs'],
                 self.__lengths: inputs['lengths'],
-                self.__keep_prob: 1.0
+                self.__keep_prob: keep_prob
             }))
 
         def update(self, states, targets):
@@ -175,14 +183,14 @@ class CoinAgent:
                 self.num_coins = 0
 
             new_portfolio = self.__get_portfolio()
-            rewords.append(new_portfolio - portfolio)
-            # diff = new_portfolio - portfolio
-            # if diff > 0:
-            #     rewords.append(1.0)
-            # elif diff < 0:
-            #     rewords.append(-1.0)
-            # else:
-            #     rewords.append(0.0)
+            # rewords.append((new_portfolio - portfolio) / portfolio)
+            diff = new_portfolio - portfolio
+            if diff > 0:
+                rewords.append(1.0)
+            elif diff < 0:
+                rewords.append(-1.0)
+            else:
+                rewords.append(0.0)
 
         return rewords
 
@@ -246,12 +254,12 @@ class CoinAgent:
                     queue.append(states[idx])
 
                     if (idx == len(states) - 1) or (idx > 0 and idx % sample_size == 0):
-                        action_dists = main_dqn.predict(queue)
+                        action_dists = main_dqn.predict(queue, keep_prob=0.5)
                         action_max_indices = np.argmax(action_dists, axis=1)
                         actions = [CoinAgent.Action(index) if random.random() > e else random.choice(cls.actions)
                                    for index in action_max_indices]
 
-                        next_action_dists = target_dqn.predict(list(queue)[1:])
+                        next_action_dists = target_dqn.predict(list(queue)[1:], keep_prob=0.5)
                         next_action_maxes = np.max(next_action_dists, axis=1)
 
                         rewards = agent.__step(queue, actions)
@@ -267,10 +275,9 @@ class CoinAgent:
                             [action_dists[index] for index in sample_indices]
                         )
 
-                        # print('Updating...')
                         summary, loss, global_step = main_dqn.update(samples[0], samples[1])
                         writer.add_summary(summary, global_step=global_step)
-                        print('[{}] Loss: {:,.2f}, Portfolio: {:,.2f}'.format(idx, loss, agent.__get_portfolio()))
+                        print('[{}] Loss: {:>20,.2f}, Portfolio: {:>20,.2f}'.format(idx, loss, agent.__get_portfolio()))
 
                         saver.save(sess, os.path.join('./model', 'coin_agent.ckpt'), global_step=global_step)
 
@@ -292,7 +299,7 @@ class CoinAgent:
                     actions = [CoinAgent.Action(index) for index in action_max_indices]
                     test_agent.__step(states, actions)
 
-                    msg = '#{:<4} Loss: {:>20,.2f}, Portfolio: {:>15,.2f}, {}'.format(
+                    msg = '#{:<4} Loss: {:>20,.2f}, Portfolio: {:>20,.2f}, {}'.format(
                         result['step'], result['loss'], test_agent.__get_portfolio(), Counter(actions))
                     fp.write(msg + '\n')
                     print(msg)
@@ -322,10 +329,10 @@ if __name__ == '__main__':
         'num_coins': 0,
         'coin_value': 0,
         'e': 0.1,
-        'r': 0.9,
-        'max_length': 10000,
+        'r': 0.99,
+        'max_length': 5000,
         'hidden_units': 100,
-        'learning_rate': 0.01,
-        'sample_size': 500,
-        'batch_size': 200
+        'learning_rate': 0.1,
+        'sample_size': 1500,
+        'batch_size': 100
     })
