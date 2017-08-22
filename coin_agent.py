@@ -42,45 +42,29 @@ class CoinAgent:
                 self.__global_step = tf.Variable(0, name='global_step', trainable=False)
 
                 window = 200
-                channel = 16
+                channel = 64
 
-                prices = tf.contrib.layers.conv2d(
-                    inputs=self.__prices,
-                    num_outputs=channel,
-                    kernel_size=window
-                )
-                prices = tf.reshape(prices, [-1, input_size, channel, 1])
-                prices = tf.nn.max_pool(
-                    value=prices,
-                    ksize=[1, window, 1, 1],
-                    strides=[1, window, 1, 1],
-                    padding='SAME'
-                )
-                prices = tf.nn.dropout(prices, keep_prob=self.__keep_prob)
+                def cnn(inputs, input_size, window, channel):
+                    inputs = tf.contrib.layers.conv2d(
+                        inputs=inputs,
+                        num_outputs=channel,
+                        kernel_size=window
+                    )
+                    inputs = tf.reshape(inputs, [-1, input_size, channel, 1])
+                    inputs = tf.nn.max_pool(
+                        value=inputs,
+                        ksize=[1, window, 1, 1],
+                        strides=[1, window, 1, 1],
+                        padding='SAME'
+                    )
 
-                qties = tf.contrib.layers.conv2d(
-                    inputs=self.__qties,
-                    num_outputs=channel,
-                    kernel_size=window
-                )
-                qties = tf.reshape(qties, [-1, input_size, channel, 1])
-                qties = tf.nn.max_pool(
-                    value=qties,
-                    ksize=[1, window, 1, 1],
-                    strides=[1, window, 1, 1],
-                    padding='SAME'
-                )
-                qties = tf.nn.dropout(qties, keep_prob=self.__keep_prob)
+                    return tf.nn.dropout(inputs, keep_prob=self.__keep_prob)
 
+                prices = cnn(self.__prices, input_size, window, channel)
+                qties = cnn(self.__qties, input_size, window, channel)
                 inputs = prices + qties
 
-                outputs = tf.contrib.layers.fully_connected(
-                    inputs=inputs,
-                    num_outputs=hidden_units,
-                )
-                outputs = tf.nn.dropout(outputs, keep_prob=self.__keep_prob)
-
-                outputs = tf.reshape(outputs, [-1, int(input_size / window) * channel * hidden_units])
+                outputs = tf.reshape(inputs, [-1, int(input_size / window) * channel])
 
                 outputs = tf.contrib.layers.fully_connected(
                     inputs=outputs,
@@ -133,7 +117,7 @@ class CoinAgent:
                         base_price = price
                         price = 0.0
                     else:
-                        price = (price - base_price) / base_price
+                        price = price / base_price
 
                     prices.append([price])
                     qties.append([qty])
@@ -356,6 +340,6 @@ if __name__ == '__main__':
         'max_length': 8000,
         'hidden_units': 100,
         'learning_rate': 0.0001,
-        'sample_size': 1500,
+        'sample_size': 200,
         'batch_size': 100
     })
