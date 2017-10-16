@@ -30,49 +30,47 @@ class CoinAgent:
         def __build_network(self, name):
             input_size = self.__params['max_length']
             output_size = len(CoinAgent.actions)
-            hidden_units = self.__params['hidden_units']
+            cell_size = self.__params['cell_size']
+            hidden_size = self.__params['hidden_size']
             learning_rate = self.__params['learning_rate']
 
             with tf.variable_scope(name):
                 self.__prices = tf.placeholder(tf.float32, [None, input_size, 1], name='prices')
                 self.__qties = tf.placeholder(tf.float32, [None, input_size, 1], name='qties')
+                self.__timestamps = tf.placeholder(tf.float32, [None, input_size, 1], name='timestamps')
                 self.__lengths = tf.placeholder(tf.int32, [None], name='lengths')
                 self.__targets = tf.placeholder(tf.float32, [None, output_size], name='targets')
                 self.__keep_prob = tf.placeholder(tf.float32, name='keep_prob')
                 self.__global_step = tf.Variable(0, name='global_step', trainable=False)
 
-                window = 200
-                channel = 64
+                def rnn_cell(size, keep_prob):
+                    cell = tf.contrib.rnn.GRUCell(size)
+                    cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=keep_prob)
+                    return cell
 
-                def cnn(inputs, input_size, window, channel):
-                    inputs = tf.contrib.layers.conv2d(
-                        inputs=inputs,
-                        num_outputs=channel,
-                        kernel_size=window
-                    )
-                    inputs = tf.reshape(inputs, [-1, input_size, channel, 1])
-                    inputs = tf.nn.max_pool(
-                        value=inputs,
-                        ksize=[1, window, 1, 1],
-                        strides=[1, window, 1, 1],
-                        padding='SAME'
-                    )
+                inputs = tf.stack([self.__prices, self.__qties, self.__timestamps], axis=3)
+                inputs = tf.reshape(inputs, [-1, input_size, 3])
 
-                    return tf.nn.dropout(inputs, keep_prob=self.__keep_prob)
+                activations, _ = tf.nn.bidirectional_dynamic_rnn(
+                    cell_fw=tf.contrib.rnn.MultiRNNCell([rnn_cell(cell_size, self.__keep_prob) for _ in range(5)]),
+                    cell_bw=tf.contrib.rnn.MultiRNNCell([rnn_cell(cell_size, self.__keep_prob) for _ in range(5)]),
+                    inputs=inputs,
+                    sequence_length=self.__lengths,
+                    dtype=tf.float32,
+                )
 
-                prices = cnn(self.__prices, input_size, window, channel)
-                qties = cnn(self.__qties, input_size, window, channel)
-                inputs = prices + qties
+                activations = activations[0] + activations[1]
+                outputs = tf.reshape(activations, [-1, input_size * cell_size])
 
-                outputs = tf.reshape(inputs, [-1, int(input_size / window) * channel])
+                # outputs = tf.contrib.layers.fully_connected(
+                #     inputs=inputs,
+                #     num_outputs=hidden_size,
+                # )
 
-                outputs = tf.contrib.layers.fully_connected(
+                self.__q = tf.contrib.layers.fully_connected(
                     inputs=outputs,
                     num_outputs=output_size,
                 )
-                outputs = tf.nn.dropout(outputs, keep_prob=self.__keep_prob)
-
-                self.__q = tf.nn.softmax(outputs)
 
                 learning_rate = tf.train.exponential_decay(
                     learning_rate=learning_rate,
@@ -103,38 +101,54 @@ class CoinAgent:
 
             inputs = {
                 'prices': [],
-                'qties': []
+                'qties': [],
+                'timestamps': []
             }
 
             for state in states:
                 prices = []
                 qties = []
+                timestamps = []
                 base_price = -1
+                base_timestamp = -1
                 for transaction in state:
                     price = float(transaction['price'])
                     qty = float(transaction['qty'])
+                    timestamp = float(transaction['timestamp'])
                     if base_price < 0:
                         base_price = price
-                        price = 0.0
+                        price = 1.0
                     else:
+                        tmp = price
                         price = price / base_price
+                        base_price = tmp
+
+                    if base_timestamp < 0:
+                        base_timestamp = timestamp
+                        timestamp = 0.0
+                    else:
+                        timestamp = timestamp - base_timestamp
 
                     prices.append([price])
                     qties.append([qty])
+                    timestamps.append([timestamp])
 
                 if input_size > len(state):
                     for _ in range(input_size - len(state)):
                         prices.append([0.0])
                         qties.append([0.0])
+                        timestamps.append([0.0])
 
                 inputs['prices'].append(prices)
                 inputs['qties'].append(qties)
+                inputs['timestamps'].append(timestamps)
 
             lengths = [len(state) for state in states]
 
             return {
                 'prices': inputs['prices'],
                 'qties': inputs['qties'],
+                'timestamps': inputs['timestamps'],
                 'lengths': lengths
             }
 
@@ -147,6 +161,7 @@ class CoinAgent:
             return list(self.__sess.run(self.__q, feed_dict={
                 self.__prices: inputs['prices'],
                 self.__qties: inputs['qties'],
+                self.__timestamps: inputs['timestamps'],
                 self.__lengths: inputs['lengths'],
                 self.__keep_prob: keep_prob
             }))
@@ -157,6 +172,7 @@ class CoinAgent:
                                                      feed_dict={
                                                          self.__prices: inputs['prices'],
                                                          self.__qties: inputs['qties'],
+                                                         self.__timestamps: inputs['timestamps'],
                                                          self.__lengths: inputs['lengths'],
                                                          self.__targets: targets,
                                                          self.__keep_prob: 0.5
@@ -245,21 +261,21 @@ class CoinAgent:
             print('Training starts.')
 
             result = {}
-            trial = 50
+            trial = 100
             global_step = 0
-            sample_size = params['sample_size']
             batch_size = params['batch_size']
-            for _ in range(trial):
+            for t in range(trial):
                 agent = cls(params)
-                queue = deque(maxlen=sample_size)
+                queue = deque(maxlen=batch_size)
 
-                sess.run(copy_ops)
-                print('Models copied.')
+                if t % 20 == 0:
+                    sess.run(copy_ops)
+                    print('Models copied.')
 
                 for idx in range(len(states)):
                     queue.append(states[idx])
 
-                    if (idx == len(states) - 1) or (idx > 0 and idx % sample_size == 0):
+                    if (idx == len(states) - 1) or (idx > 0 and idx % batch_size == 0):
                         action_dists = main_dqn.predict(queue)
                         action_max_indices = np.argmax(action_dists, axis=1)
                         actions = [CoinAgent.Action(index) if random.random() > e / (global_step + 1) else random.choice(cls.actions)
@@ -275,16 +291,19 @@ class CoinAgent:
                             else:
                                 action_dists[i][action_max_indices[i]] = rewards[i] + r * next_action_maxes[i]
 
-                        sample_indices = random.choices([i for i in range(len(queue))], k=batch_size)
+                        indices = [i for i in range(len(queue))]
+                        random.shuffle(indices)
+
                         samples = (
-                            [queue[index] for index in sample_indices],
-                            [action_dists[index] for index in sample_indices]
+                            [queue[index] for index in indices],
+                            [action_dists[index] for index in indices]
                         )
 
                         summary, loss, global_step = main_dqn.update(samples[0], samples[1])
                         writer.add_summary(summary, global_step=global_step)
-                        print('[{}] Loss: {:>20,.2f}, Portfolio: {:>20,.2f}, {}'.format(
-                            idx, loss, agent.__get_portfolio(), Counter(actions)))
+                        print('[{}] Loss: {:>10,.4f}, Portfolio: {:>12,.2f}, {}, {}'.format(
+                            idx, loss, agent.__get_portfolio(),
+                            Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
 
                         # saver.save(sess, os.path.join('./model', 'coin_agent.ckpt'), global_step=global_step)
 
@@ -292,6 +311,8 @@ class CoinAgent:
                             'step': global_step,
                             'loss': loss,
                         }
+
+                        queue.clear()
 
                 if not os.path.exists('./out'):
                     os.mkdir('./out')
@@ -306,8 +327,9 @@ class CoinAgent:
                     actions = [CoinAgent.Action(index) for index in action_max_indices]
                     test_agent.__step(states, actions)
 
-                    msg = '#{:<4} Loss: {:>20,.2f}, Portfolio: {:>20,.2f}, {}'.format(
-                        result['step'], result['loss'], test_agent.__get_portfolio(), Counter(actions))
+                    msg = '#{:<5} Loss: {:>10,.4f}, Portfolio: {:>12,.2f}, {}, {}'.format(
+                        result['step'], result['loss'], test_agent.__get_portfolio(),
+                        Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2))
                     fp.write(msg + '\n')
                     print(msg)
 
@@ -336,10 +358,10 @@ if __name__ == '__main__':
         'num_coins': 0,
         'coin_value': 0,
         'e': 1.0,
-        'r': 0.99,
-        'max_length': 8000,
-        'hidden_units': 100,
+        'r': 0.9,
+        'max_length': 100,
+        'cell_size': 20,
+        'hidden_size': 0,
         'learning_rate': 0.0001,
-        'sample_size': 200,
-        'batch_size': 100
+        'batch_size': 3000
     })
