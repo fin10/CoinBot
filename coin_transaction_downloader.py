@@ -3,53 +3,55 @@ import decimal
 import gzip
 import json
 import os
+import time
 
 import boto3
 import botocore.exceptions
-import time
 from boto3.dynamodb.conditions import Attr
 
+from paths import Paths
 
-class CoinTrade:
+
+class CoinTransactionDownloader:
+
     class _DecimalEncoder(json.JSONEncoder):
         def default(self, obj):
             if isinstance(obj, decimal.Decimal):
                 return float(obj)
-            return super(CoinTrade._DecimalEncoder, self).default(obj)
+            return super(CoinTransactionDownloader._DecimalEncoder, self).default(obj)
 
-    def __init__(self):
+    @classmethod
+    def download(cls, currency: str):
         config = configparser.ConfigParser()
-        config.read('./aws.ini')
+        config.read(os.path.join(Paths.ROOT, 'aws.ini'))
 
-        self.__region = config['aws']['region']
-        self.__access_key_id = config['aws']['access_key_id']
-        self.__secret_access_key = config['aws']['secret_access_key']
+        region = config['aws']['region']
+        access_key_id = config['aws']['access_key_id']
+        secret_access_key = config['aws']['secret_access_key']
 
-    def download(self, currency: str):
         db = boto3.resource(service_name='dynamodb',
-                            region_name=self.__region,
-                            aws_access_key_id=self.__access_key_id,
-                            aws_secret_access_key=self.__secret_access_key)
+                            region_name=region,
+                            aws_access_key_id=access_key_id,
+                            aws_secret_access_key=secret_access_key)
         trades_table = db.Table('trades')
 
         response = trades_table.scan(
             FilterExpression=Attr('currency').eq(currency)
         )
 
-        if not os.path.exists('./out'):
-            os.mkdir('./out')
+        if not os.path.exists(Paths.DATA):
+            os.mkdir(Paths.DATA)
 
         total = 0
         print('# %s' % currency)
         while True:
             items = response['Items']
-            print('%d exists' % len(items))
             total += len(items)
 
             for item in items:
-                with open(os.path.join('./out', item['key'] + '.json'), mode='w') as fp:
+                with open(os.path.join(Paths.DATA, item['key'] + '.json'), mode='w', encoding='utf-8') as fp:
                     item['orders'] = json.loads(gzip.decompress(item['orders'].value).decode())
-                    fp.write(json.dumps(item, cls=self._DecimalEncoder))
+                    fp.write(json.dumps(item, cls=cls._DecimalEncoder))
 
             if 'LastEvaluatedKey' in response:
                 while True:
@@ -59,13 +61,13 @@ class CoinTrade:
                             ExclusiveStartKey=response['LastEvaluatedKey']
                         )
                         break
-                    except botocore.exceptions.ClientError as e:
-                        print(e)
+                    except botocore.exceptions.ClientError:
                         time.sleep(5)
             else:
                 break
-        print('Total (%d)' % total)
+
+            print('%d downloaded.' % total)
 
 
 if __name__ == '__main__':
-    CoinTrade().download('eth')
+    CoinTransactionDownloader.download('eth')
