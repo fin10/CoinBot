@@ -166,6 +166,10 @@ class DQN:
             input_fn=lambda: self.__input_fn(transactions, action_dists, shuffle=True)
         )
 
+        return self.__estimator.evaluate(
+            input_fn=lambda: self.__input_fn(transactions, action_dists)
+        )
+
     def predict(self, transactions: list):
         if self.__estimator is None:
             return [[random.random() for _ in range(self.__params['output_size'])] for _ in

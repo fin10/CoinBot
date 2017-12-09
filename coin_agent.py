@@ -94,7 +94,7 @@ class CoinAgent:
                 if i < len(transactions) - 1:
                     action_dists[i][action_max_indices[i]] += r * next_action_max_values[i]
 
-            print('[{}] Portfolio: {:>12,.2f}, {}, {}'.format(
-                n, self.__get_portfolio(), Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
-
-            main_dqn.train(transactions, action_dists)
+            result = main_dqn.train(transactions, action_dists)
+            print('[{}] #{}, Loss: {:>8,.4f}, Portfolio: {:>12,.2f}, {}, {}'.format(
+                n, result['global_step'], result['loss'],
+                self.__get_portfolio(), Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
