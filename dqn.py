@@ -1,10 +1,10 @@
 import os
 import random
-import shutil
 
 import tensorflow as tf
 
-tf.logging.set_verbosity(tf.logging.INFO)
+
+# tf.logging.set_verbosity(tf.logging.INFO)
 
 
 class DQN:
@@ -83,6 +83,9 @@ class DQN:
         output_size = self.__params['output_size']
         max_length = self.__params['max_length']
 
+        if action_dists is None:
+            action_dists = [[0.0 for _ in range(output_size)] for _ in range(len(transactions))]
+
         dataset = tf.data.Dataset.from_generator(
             lambda: self.generate_input(transactions, action_dists),
             ({'prices': tf.float32, 'qties': tf.float32, 'timestamps': tf.float32, 'length': tf.int32}, tf.float32),
@@ -154,10 +157,9 @@ class DQN:
         )
 
     def train(self, transactions: list, action_dists: list):
-        if os.path.exists(self.__model_path):
-            shutil.rmtree(self.__model_path)
+        if not os.path.exists(self.__model_path):
+            os.makedirs(self.__model_path)
 
-        os.makedirs(self.__model_path)
         self.__estimator = self.__create_estimator()
 
         self.__estimator.train(
@@ -166,11 +168,9 @@ class DQN:
 
     def predict(self, transactions: list):
         if self.__estimator is None:
-            predictions = [[random.random() for _ in range(self.__params['output_size'])] for _ in
-                           range(len(transactions))]
+            return [[random.random() for _ in range(self.__params['output_size'])] for _ in
+                    range(len(transactions))]
         else:
-            predictions = list(self.__estimator.predict(
+            return list(self.__estimator.predict(
                 input_fn=lambda: self.__input_fn(transactions)
             ))
-
-        return predictions
