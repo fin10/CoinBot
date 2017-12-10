@@ -1,5 +1,7 @@
 import json
 import os
+import shutil
+import tempfile
 from collections import Counter
 from enum import Enum
 
@@ -18,29 +20,34 @@ class CoinAgent:
     actions = list(Action)
 
     def __init__(self, commission, budget, num_coin, coin_value):
-        self.commission = commission
-        self.budget = budget
-        self.num_coin = num_coin
-        self.coin_value = coin_value
+        self.__commission = commission
+        self.__budget = budget
+        self.__num_coin = num_coin
+        self.__coin_value = coin_value
 
-    def __get_portfolio(self):
-        return self.budget + self.num_coin * self.coin_value
-
-    def __step(self, transactions, actions):
+    def __get_rewards(self, transactions, actions):
         rewords = []
+        commission = self.__commission
+        budget = self.__budget
+        num_coin = self.__num_coin
+        coin_value = self.__coin_value
+
+        def get_portfolio():
+            return budget + num_coin * coin_value
+
         for transaction, action in zip(transactions, actions):
-            portfolio = self.__get_portfolio()
+            portfolio = get_portfolio()
 
-            self.coin_value = int(transaction[-1]['price'])
-            if action == CoinAgent.Action.BUY and self.budget > 0:
-                bought = (self.budget / self.coin_value) * (1 - self.commission)
-                self.budget -= int(bought * self.coin_value)
-                self.num_coin += bought
-            elif action == CoinAgent.Action.SELL and self.num_coin > 0:
-                self.budget += int(self.num_coin * self.coin_value * (1 - self.commission))
-                self.num_coin = 0
+            coin_value = int(transaction[-1]['price'])
+            if action == CoinAgent.Action.BUY and budget > 0:
+                bought = (budget / coin_value) * (1 - commission)
+                budget -= int(bought * coin_value)
+                num_coin += bought
+            elif action == CoinAgent.Action.SELL and num_coin > 0:
+                budget += int(num_coin * coin_value * (1 - commission))
+                num_coin = 0
 
-            new_portfolio = self.__get_portfolio()
+            new_portfolio = get_portfolio()
             # rewords.append((new_portfolio - portfolio) / portfolio)
             diff = new_portfolio - portfolio
             if diff > 0:
@@ -50,7 +57,7 @@ class CoinAgent:
             else:
                 rewords.append(0.0)
 
-        return rewords
+        return get_portfolio(), rewords
 
     @staticmethod
     def get_transactions(path, currency, max_size=-1):
@@ -87,7 +94,7 @@ class CoinAgent:
             next_action_dists = target_dqn.predict(transactions[1:])
             next_action_max_values = np.max(next_action_dists, axis=1)
 
-            rewards = self.__step(transactions, actions)
+            portfolio, rewards = self.__get_rewards(transactions, actions)
 
             for i in range(len(transactions)):
                 action_dists[i][action_max_indices[i]] = rewards[i]
@@ -97,4 +104,13 @@ class CoinAgent:
             result = main_dqn.train(transactions, action_dists)
             print('[{}] #{}, Loss: {:>8,.4f}, Portfolio: {:>12,.2f}, {}, {}'.format(
                 n, result['global_step'], result['loss'],
-                self.__get_portfolio(), Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
+                portfolio, Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
+
+            if n > 0 and n % 10 == 0:
+                target = os.path.join(tempfile.gettempdir(), 'target_model')
+                if os.path.exists(Paths.MODEL):
+                    shutil.rmtree(Paths.MODEL)
+
+                shutil.copytree(Paths.MODEL, target)
+                target_dqn = DQN(target, len(self.actions))
+                print('Copied model to %s.' % target)

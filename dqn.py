@@ -13,9 +13,9 @@ class DQN:
         self.__params = {
             'output_size': output_size,
             'batch_size': 1000,
-            'max_length': 100,
-            'cell_size': 10,
-            'learning_rate': 0.001,
+            'max_length': 5000,
+            'cell_size': 100,
+            'learning_rate': 0.0001,
         }
 
         self.__model_path = model_dir
@@ -60,9 +60,7 @@ class DQN:
                     prev_timestamp = timestamp
 
                 prices.append(price - prev_price)
-                prev_price = price
                 timestamps.append(timestamp - prev_timestamp)
-                prev_timestamp = timestamp
                 qties.append(qty)
 
             if len(prices) < max_length:
@@ -121,12 +119,20 @@ class DQN:
         inputs = tf.stack([prices, qties, timestamps], axis=2)
         inputs = tf.reshape(inputs, [-1, self.__params['max_length'] * 3])
 
-        outputs = tf.layers.dense(
-            inputs=inputs,
-            units=output_size,
-            activation=tf.nn.relu,
-            kernel_initializer=tf.contrib.layers.xavier_initializer()
-        )
+        def dense(inputs, units):
+            return tf.layers.dense(
+                inputs=inputs,
+                units=units,
+                activation=tf.nn.relu,
+                kernel_initializer=tf.contrib.layers.xavier_initializer()
+            )
+
+        outputs = dense(inputs, cell_size)
+
+        for _ in range(3):
+            outputs = dense(outputs, cell_size)
+
+        outputs = dense(outputs, output_size)
 
         loss = None
         if mode != tf.estimator.ModeKeys.PREDICT:
@@ -137,13 +143,6 @@ class DQN:
 
         train_op = None
         if mode == tf.estimator.ModeKeys.TRAIN:
-            learning_rate = tf.train.exponential_decay(
-                learning_rate=learning_rate,
-                global_step=tf.train.get_global_step(),
-                decay_steps=10,
-                decay_rate=0.96
-            )
-
             train_op = tf.train.AdamOptimizer(learning_rate=learning_rate).minimize(
                 loss=loss,
                 global_step=tf.train.get_global_step(),
@@ -171,6 +170,9 @@ class DQN:
         )
 
     def predict(self, transactions: list):
+        if os.path.exists(self.__model_path):
+            self.__estimator = self.__create_estimator()
+
         if self.__estimator is None:
             return [[random.random() for _ in range(self.__params['output_size'])] for _ in
                     range(len(transactions))]
