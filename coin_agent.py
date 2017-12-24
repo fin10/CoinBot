@@ -27,6 +27,7 @@ class CoinAgent:
 
     def __get_rewards(self, transactions, actions):
         rewords = []
+        portfolios = []
         commission = self.__commission
         budget = self.__budget
         num_coin = self.__num_coin
@@ -47,17 +48,17 @@ class CoinAgent:
                 budget += int(num_coin * coin_value * (1 - commission))
                 num_coin = 0
 
-            new_portfolio = get_portfolio()
-            # rewords.append((new_portfolio - portfolio) / portfolio)
-            diff = new_portfolio - portfolio
-            if diff > 0:
-                rewords.append(1.0)
-            elif diff < 0:
-                rewords.append(-1.0)
-            else:
-                rewords.append(0.0)
+            portfolios.append(get_portfolio())
+            rewords.append((portfolios[-1] - portfolio))
+            # diff = portfolios[-1] - portfolio
+            # if diff > 0:
+            #     rewords.append(1.0)
+            # elif diff < 0:
+            #     rewords.append(-1.0)
+            # else:
+            #     rewords.append(0.0)
 
-        return get_portfolio(), rewords
+        return portfolios, rewords
 
     @staticmethod
     def get_transactions(path, currency, max_size=-1):
@@ -94,23 +95,37 @@ class CoinAgent:
             next_action_dists = target_dqn.predict(transactions[1:])
             next_action_max_values = np.max(next_action_dists, axis=1)
 
-            portfolio, rewards = self.__get_rewards(transactions, actions)
+            portfolios, rewards = self.__get_rewards(transactions, actions)
 
+            target_dists = []
             for i in range(len(transactions)):
-                action_dists[i][action_max_indices[i]] = rewards[i]
+                target_dist = list(action_dists[i])
+                target_dist[action_max_indices[i]] = rewards[i]
                 if i < len(transactions) - 1:
-                    action_dists[i][action_max_indices[i]] += r * next_action_max_values[i]
+                    target_dist[action_max_indices[i]] += r * next_action_max_values[i]
+                target_dists.append(target_dist)
 
-            result = main_dqn.train(transactions, action_dists)
+            result = main_dqn.train(transactions, target_dists)
             print('[{}] #{}, Loss: {:>8,.4f}, Portfolio: {:>12,.2f}, {}, {}'.format(
                 n, result['global_step'], result['loss'],
-                portfolio, Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
+                portfolios[-1], Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
 
             if n > 0 and n % 10 == 0:
                 target = os.path.join(tempfile.gettempdir(), 'target_model')
-                if os.path.exists(Paths.MODEL):
-                    shutil.rmtree(Paths.MODEL)
+                if os.path.exists(target):
+                    shutil.rmtree(target)
 
                 shutil.copytree(Paths.MODEL, target)
                 target_dqn = DQN(target, len(self.actions))
                 print('Copied model to %s.' % target)
+
+    def evaluate(self, currency):
+        main_dqn = DQN(Paths.MODEL, len(self.actions))
+        transactions = self.get_transactions(Paths.DATA, currency)
+
+        action_dists = main_dqn.predict(transactions)
+        action_max_indices = np.argmax(action_dists, axis=1)
+        actions = [CoinAgent.Action(index) for index in action_max_indices]
+
+        portfolios, _ = self.__get_rewards(transactions, actions)
+        return portfolios

@@ -2,6 +2,8 @@ import os
 import shutil
 import unittest
 
+import matplotlib.pyplot as plt
+
 from coin_agent import CoinAgent
 from paths import Paths
 
@@ -14,15 +16,19 @@ class CoinAgentTest(unittest.TestCase):
         coin_value=0,
     )
 
-    def setUp(self):
+    def test_train(self):
         if os.path.exists(Paths.MODEL):
             shutil.rmtree(Paths.MODEL)
 
-    def test_train(self):
         self.__agent.train('eth', params={
             'r': 0.9,
-            'epoch': 1
+            'epoch': 20
         })
+
+    def test_evaluate(self):
+        portfolios = self.__agent.evaluate('eth')
+        plt.plot(portfolios)
+        plt.show()
 
     def test_getting_transactions(self):
         result = CoinAgent.get_transactions(Paths.DATA, 'eth')

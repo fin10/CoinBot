@@ -14,8 +14,8 @@ class DQN:
             'output_size': output_size,
             'batch_size': 1000,
             'max_length': 5000,
-            'cell_size': 100,
-            'learning_rate': 0.0001,
+            'cell_size': 20,
+            'learning_rate': 0.00001,
         }
 
         self.__model_path = model_dir
@@ -177,6 +177,7 @@ class DQN:
             return [[random.random() for _ in range(self.__params['output_size'])] for _ in
                     range(len(transactions))]
         else:
-            return list(self.__estimator.predict(
+            predictions = list(self.__estimator.predict(
                 input_fn=lambda: self.__input_fn(transactions)
             ))
+            return [list(p) for p in predictions]
