@@ -49,14 +49,7 @@ class CoinAgent:
                 num_coin = 0
 
             portfolios.append(get_portfolio())
-            rewords.append((portfolios[-1] - portfolio))
-            # diff = portfolios[-1] - portfolio
-            # if diff > 0:
-            #     rewords.append(1.0)
-            # elif diff < 0:
-            #     rewords.append(-1.0)
-            # else:
-            #     rewords.append(0.0)
+            rewords.append((portfolios[-1] - portfolio) * 0.01)
 
         return portfolios, rewords
 
@@ -78,12 +71,24 @@ class CoinAgent:
 
         return transactions
 
+    @staticmethod
+    def __copy_model(src):
+        target = os.path.join(tempfile.gettempdir(), 'target_model')
+        if os.path.exists(target):
+            shutil.rmtree(target)
+
+        shutil.copytree(src, target)
+        print('Copied model to %s.' % target)
+        return target
+
     def train(self, currency, params):
         r = params['r']
         epoch = params['epoch']
 
         main_dqn = DQN(Paths.MODEL, len(self.actions))
-        target_dqn = DQN(Paths.MODEL, len(self.actions))
+        copied = self.__copy_model(Paths.MODEL)
+
+        target_dqn = DQN(copied, len(self.actions))
         transactions = self.get_transactions(Paths.DATA, currency)
 
         print('Training starts.')
@@ -110,14 +115,9 @@ class CoinAgent:
                 n, result['global_step'], result['loss'],
                 portfolios[-1], Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
 
-            if n > 0 and n % 10 == 0:
-                target = os.path.join(tempfile.gettempdir(), 'target_model')
-                if os.path.exists(target):
-                    shutil.rmtree(target)
-
-                shutil.copytree(Paths.MODEL, target)
-                target_dqn = DQN(target, len(self.actions))
-                print('Copied model to %s.' % target)
+            if n > 0 and n % 5 == 0:
+                copied = self.__copy_model(Paths.MODEL)
+                target_dqn = DQN(copied, len(self.actions))
 
     def evaluate(self, currency):
         main_dqn = DQN(Paths.MODEL, len(self.actions))

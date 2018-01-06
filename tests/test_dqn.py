@@ -15,9 +15,7 @@ class CoinAgentTest(unittest.TestCase):
 
     def test_generate_inputs(self):
         dqn = DQN(Paths.MODEL, len(CoinAgent.actions))
-
         transactions = CoinAgent.get_transactions(Paths.DATA, 'eth', max_size=5)
-        action_dists = dqn.predict(transactions)
 
-        for result in dqn.generate_input(transactions, action_dists):
+        for result in dqn.generate_input(transactions, []):
             self.assertIsNotNone(result)

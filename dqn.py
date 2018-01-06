@@ -12,20 +12,24 @@ class DQN:
     def __init__(self, model_dir, output_size):
         self.__params = {
             'output_size': output_size,
-            'batch_size': 1000,
-            'max_length': 5000,
-            'cell_size': 20,
-            'learning_rate': 0.00001,
+            'batch_size': 5000,
+            'max_length': 100,
+            'rnn_cell_size': 50,
+            'nn_cell_size': 20,
+            'learning_rate': 0.0001,
         }
 
         self.__model_path = model_dir
-        self.__estimator = None
+        self.__estimator = self.__create_estimator()
 
-        if os.path.exists(self.__model_path):
-            self.__estimator = self.__create_estimator()
+        if not os.path.exists(self.__model_path):
+            os.makedirs(self.__model_path)
+            self.__estimator.train(
+                input_fn=lambda: self.__input_fn()
+            )
 
     def __create_estimator(self):
-        return tf.estimator.Estimator(
+        estimator = tf.estimator.Estimator(
             model_fn=self.__model_fn,
             model_dir=self.__model_path,
             config=tf.estimator.RunConfig(
@@ -34,6 +38,8 @@ class DQN:
             ),
             params=self.__params,
         )
+
+        return estimator
 
     def generate_input(self, transactions: list, action_dists: list):
         max_length = self.__params['max_length']
@@ -47,20 +53,20 @@ class DQN:
             prices = []
             qties = []
             timestamps = []
-            prev_price = -1
-            prev_timestamp = -1
+            first_price = -1
+            first_timestamp = -1
 
             for record in transaction:
                 price = float(record['price'])
                 qty = float(record['qty'])
                 timestamp = float(record['timestamp'])
 
-                if prev_price < 0 and prev_timestamp < 0:
-                    prev_price = price
-                    prev_timestamp = timestamp
+                if first_price < 0 and first_timestamp < 0:
+                    first_price = price
+                    first_timestamp = timestamp
 
-                prices.append(price - prev_price)
-                timestamps.append(timestamp - prev_timestamp)
+                prices.append((((price / first_price) - 1.0) * 50 + 1.0))
+                timestamps.append((timestamp - first_timestamp) / 3600.0)
                 qties.append(qty)
 
             if len(prices) < max_length:
@@ -76,7 +82,10 @@ class DQN:
                       'length': len(transaction)
                   }, action_dist
 
-    def __input_fn(self, transactions: list, action_dists: list = None, shuffle=False):
+    def __input_fn(self, transactions: list = None, action_dists: list = None, shuffle=False):
+        if transactions is None:
+            transactions = [[]]
+
         batch_size = self.__params['batch_size'] if self.__params['batch_size'] > 0 else len(transactions)
         output_size = self.__params['output_size']
         max_length = self.__params['max_length']
@@ -106,7 +115,8 @@ class DQN:
         return features, label
 
     def __model_fn(self, features, labels, mode, params):
-        cell_size = params['cell_size']
+        rnn_cell_size = params['rnn_cell_size']
+        nn_cell_size = params['nn_cell_size']
         output_size = params['output_size']
         learning_rate = params['learning_rate']
         keep_prob = 1.0 if mode != tf.contrib.learn.ModeKeys.TRAIN else 0.5
@@ -116,8 +126,27 @@ class DQN:
         timestamps = features['timestamps']
         length = features['length']
 
-        inputs = tf.stack([prices, qties, timestamps], axis=2)
-        inputs = tf.reshape(inputs, [-1, self.__params['max_length'] * 3])
+        inputs = tf.stack([prices, timestamps], axis=2)
+
+        def rnn_cell(cell_size):
+            cell = tf.nn.rnn_cell.GRUCell(
+                num_units=cell_size,
+                activation=tf.nn.relu,
+                kernel_initializer=tf.contrib.layers.xavier_initializer()
+            )
+            cell = tf.contrib.rnn.DropoutWrapper(cell, output_keep_prob=keep_prob)
+            return cell
+
+        outputs, _ = tf.nn.bidirectional_dynamic_rnn(
+            cell_fw=rnn_cell(rnn_cell_size),
+            cell_bw=rnn_cell(rnn_cell_size),
+            inputs=inputs,
+            sequence_length=length,
+            dtype=tf.float32
+        )
+
+        outputs = outputs[0] + outputs[1]
+        outputs = tf.reshape(outputs, [-1, self.__params['max_length'] * rnn_cell_size])
 
         def dense(inputs, units):
             return tf.layers.dense(
@@ -127,11 +156,8 @@ class DQN:
                 kernel_initializer=tf.contrib.layers.xavier_initializer()
             )
 
-        outputs = dense(inputs, cell_size)
-
-        for _ in range(3):
-            outputs = dense(outputs, cell_size)
-
+        for _ in range(0):
+            outputs = dense(outputs, nn_cell_size)
         outputs = dense(outputs, output_size)
 
         loss = None
@@ -156,11 +182,6 @@ class DQN:
         )
 
     def train(self, transactions: list, action_dists: list):
-        if not os.path.exists(self.__model_path):
-            os.makedirs(self.__model_path)
-
-        self.__estimator = self.__create_estimator()
-
         self.__estimator.train(
             input_fn=lambda: self.__input_fn(transactions, action_dists, shuffle=True)
         )
@@ -170,14 +191,7 @@ class DQN:
         )
 
     def predict(self, transactions: list):
-        if os.path.exists(self.__model_path):
-            self.__estimator = self.__create_estimator()
-
-        if self.__estimator is None:
-            return [[random.random() for _ in range(self.__params['output_size'])] for _ in
-                    range(len(transactions))]
-        else:
-            predictions = list(self.__estimator.predict(
-                input_fn=lambda: self.__input_fn(transactions)
-            ))
-            return [list(p) for p in predictions]
+        predictions = list(self.__estimator.predict(
+            input_fn=lambda: self.__input_fn(transactions)
+        ))
+        return [list(p) for p in predictions]
