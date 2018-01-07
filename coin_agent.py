@@ -1,5 +1,6 @@
 import json
 import os
+import random
 import shutil
 import tempfile
 from collections import Counter
@@ -19,11 +20,11 @@ class CoinAgent:
 
     actions = list(Action)
 
-    def __init__(self, commission, budget, num_coin, coin_value):
+    def __init__(self, commission):
         self.__commission = commission
-        self.__budget = budget
-        self.__num_coin = num_coin
-        self.__coin_value = coin_value
+        self.__budget = 0
+        self.__num_coin = 0
+        self.__coin_value = 0
 
     def __get_rewards(self, transactions, actions):
         rewords = []
@@ -129,3 +130,12 @@ class CoinAgent:
 
         portfolios, _ = self.__get_rewards(transactions, actions)
         return portfolios
+
+    def predict(self, transaction, debug=False):
+        if debug:
+            return random.choice(CoinAgent.actions), [0, 0, 0]
+
+        main_dqn = DQN(Paths.MODEL, len(self.actions))
+        action_dist = main_dqn.predict([transaction])[0]
+        action = CoinAgent.Action(action_dist)
+        return action, action_dist

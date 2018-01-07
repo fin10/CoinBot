@@ -3,5 +3,8 @@
 ### Dependencies
 - Python 3
 - Tensorflow 1.4
-- Flask
-- boto3 
+- matplotlib
+- boto3
+- flask
+- apscheduler
+- requests

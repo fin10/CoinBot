@@ -23,7 +23,7 @@ class CoinTransactionDownloader:
     @classmethod
     def download(cls, currency: str):
         config = configparser.ConfigParser()
-        config.read(os.path.join(Paths.ROOT, 'aws.ini'))
+        config.read(Paths.CONFIG)
 
         region = config['aws']['region']
         access_key_id = config['aws']['access_key_id']

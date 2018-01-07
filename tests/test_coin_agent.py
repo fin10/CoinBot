@@ -9,12 +9,7 @@ from paths import Paths
 
 
 class CoinAgentTest(unittest.TestCase):
-    __agent = CoinAgent(
-        commission=0.0015,
-        budget=100000,
-        num_coin=0,
-        coin_value=0,
-    )
+    __agent = CoinAgent(commission=0.0015)
 
     def test_train(self):
         if os.path.exists(Paths.MODEL):
