@@ -15,10 +15,22 @@ class CoinAgentTest(unittest.TestCase):
         if os.path.exists(Paths.MODEL):
             shutil.rmtree(Paths.MODEL)
 
-        self.__agent.train('eth', params={
+        transactions = CoinAgent.get_transactions(Paths.DATA, 'eth')
+
+        pivot = int(len(transactions) * 0.8)
+        train_set = transactions[:pivot]
+        test_set = transactions[pivot:]
+        print('Train: {:,}, Test: {:,}'.format(len(train_set), len(test_set)))
+
+        self.__agent.train(train_set, params={
             'r': 0.9,
-            'epoch': 20
+            'epoch': 50
         })
+
+        portfolios = self.__agent.evaluate(test_set)
+        plt.plot(portfolios)
+
+        plt.show()
 
     def test_evaluate(self):
         portfolios = self.__agent.evaluate('eth')
