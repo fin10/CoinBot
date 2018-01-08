@@ -156,8 +156,7 @@ class DQN:
                 kernel_initializer=tf.contrib.layers.xavier_initializer()
             )
 
-        for _ in range(0):
-            outputs = dense(outputs, nn_cell_size)
+        outputs = dense(outputs, nn_cell_size)
         outputs = dense(outputs, output_size)
 
         loss = None
