@@ -49,7 +49,7 @@ class CoinAgent:
                 num_coin -= 1
 
             portfolios.append(get_portfolio())
-            rewords.append((portfolios[-1] - portfolio) * 0.0001)
+            rewords.append((portfolios[-1] - portfolio) * 0.001)
 
         return portfolios, rewords
 
@@ -112,7 +112,7 @@ class CoinAgent:
                 n, result['global_step'], result['loss'],
                 portfolios[-1], Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
 
-            if n > 0 and n % 10 == 0:
+            if n > 0 and n % 5 == 0:
                 copied = self.__copy_model(Paths.MODEL)
                 target_dqn = DQN(copied, len(self.actions))
 
@@ -135,5 +135,5 @@ class CoinAgent:
 
         main_dqn = DQN(Paths.MODEL, len(self.actions))
         action_dist = main_dqn.predict([transaction])[0]
-        action = CoinAgent.Action(action_dist)
+        action = CoinAgent.Action(np.argmax(action_dist))
         return action, action_dist
