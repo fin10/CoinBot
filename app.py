@@ -5,20 +5,27 @@ from trading_service import TradingService
 app = Flask(__name__)
 service = TradingService(
     currency='xrp',
-    budget=10000
+    budget=10000,
+    criteria=-50.0
 )
 
 
 @app.route("/resume")
 def resume():
-    service.resume()
-    return "do_start"
+    try:
+        service.resume()
+    except Exception as e:
+        return str(e)
+    return "Server resumed"
 
 
 @app.route("/pause")
 def pause():
-    service.pause()
-    return "stop"
+    try:
+        service.pause()
+    except Exception as e:
+        return str(e)
+    return "Server stopped"
 
 
 if __name__ == '__main__':
