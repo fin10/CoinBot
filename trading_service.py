@@ -131,11 +131,13 @@ class TradingService:
                 color = 'warning'
                 msg = 'Not enough coins'
 
+        portfolio = self.__budget + self.__num_coin * latest_price
+
         cur_time = time.localtime()
         if cur_time.tm_mday != self.__portfolio['time'].tm_mday:
+            self.__portfolio['daily'] = portfolio
             self.__portfolio['time'] = cur_time
 
-        portfolio = self.__budget + self.__num_coin * latest_price
         daily = 100.0 * ((portfolio / self.__portfolio['daily']) - 1.0)
         total = 100.0 * ((portfolio / self.__portfolio['principal']) - 1.0)
 

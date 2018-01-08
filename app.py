@@ -29,5 +29,5 @@ def pause():
 
 
 if __name__ == '__main__':
-    service.start(mins=1, debug=True)
+    service.start(mins=60, debug=True)
     app.run('localhost', 3000, debug=False)
