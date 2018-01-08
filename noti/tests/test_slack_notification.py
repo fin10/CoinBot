@@ -10,9 +10,10 @@ class SlackNotificationTest(unittest.TestCase):
         res = SlackNotification.notify(
             title='xrp',
             color='good',
-            msg='[{action}]\n'
+            msg='[{action}] {dist}\n'
                 '가격 {price:,} 거래량 {qty:,.4f}\n'
                 '*{msg}*'.format(action=CoinAgent.Action.BUY,
+                                 dist=[0, 0, 0],
                                  price=10000,
                                  qty=1000.0999,
                                  msg='Success'),

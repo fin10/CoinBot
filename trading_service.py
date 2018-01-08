@@ -56,13 +56,14 @@ class TradingService:
         self.__scheduler.shutdown(False)
         SlackNotification.notify('Coin Bot', 'good', 'Server Stopped!')
 
-    def result_notify(self, color, prediction, latest_price, qty, msg, portfolio, daily, total):
+    def result_notify(self, color, prediction, dist, latest_price, qty, msg, portfolio, daily, total):
         SlackNotification.notify(
             title=self.__currency,
             color=color,
-            msg='[{action}]\n'
+            msg='[{action}] {dist}\n'
                 '가격 {price:,} 거래량 {qty:,.4f}\n'
                 '*{msg}*'.format(action=prediction,
+                                 dist=dist,
                                  price=latest_price,
                                  qty=qty,
                                  msg=msg),
@@ -145,7 +146,7 @@ class TradingService:
             self.__currency, prediction, dist, portfolio, latest_price, qty
         ))
 
-        self.result_notify(color=color, prediction=prediction, latest_price=latest_price, qty=qty, msg=msg,
+        self.result_notify(color=color, prediction=prediction, dist=dist, latest_price=latest_price, qty=qty, msg=msg,
                            portfolio=portfolio, daily=daily, total=total)
 
         if total < self.__criteria:
