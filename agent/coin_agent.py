@@ -8,7 +8,7 @@ from enum import Enum
 
 import numpy as np
 
-from dqn import DQN
+from agent.dqn import DQN
 from paths import Paths
 
 

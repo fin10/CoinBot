@@ -3,29 +3,33 @@ import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from coin_agent import CoinAgent
+from agent.coin_agent import CoinAgent
 from logger import logger
 from noti.slack_notification import SlackNotification
 from paths import Paths
 from trade.coin_trader import CoinTrader
 
-config = configparser.ConfigParser()
-config.read(Paths.CONFIG)
-
-URL_PAUSE = '{}/{}'.format(config['server']['url'], 'pause')
-URL_RESUME = '{}/{}'.format(config['server']['url'], 'resume')
-
 
 class TradingService:
+    __config = configparser.ConfigParser()
+    __config.read(Paths.CONFIG)
 
-    def __init__(self, currency, budget, criteria):
-        self.__commission = 0.0015
-        self.__currency = currency
-        self.__budget = budget
+    __commission = 0.0015
+
+    def __init__(self):
+        self.__currency = None
+        self.__budget = 0
         self.__num_coin = 0.0
-        self.__criteria = criteria
+        self.__criteria = 0.0
         self.__agent = CoinAgent(self.__commission)
         self.__scheduler = BackgroundScheduler()
+
+        self.__portfolio = None
+
+    def start(self, currency, budget, criteria=-50.0, mins=60):
+        self.__currency = currency
+        self.__budget = budget
+        self.__criteria = criteria
 
         self.__portfolio = {
             'principal': budget,
@@ -33,16 +37,14 @@ class TradingService:
             'time': time.localtime()
         }
 
-    def start(self, mins=60, debug=False):
-        self.__scheduler.add_job(lambda: self.do_trading(debug=debug), 'interval', minutes=mins, id='do_trading')
+        self.__scheduler.add_job(self.do_trading, 'interval', minutes=mins, id='do_trading')
         self.__scheduler.start()
-        SlackNotification.notify('Coin Bot', 'good', 'Server started!', fields=[
-            {
+
+        SlackNotification.notify('Coin Bot', 'good', 'Server started!', fields=[{
                 'title': '지갑',
                 'value': 'KRW {budget:,}\n'.format(budget=self.__budget),
                 'short': True
-            }
-        ])
+        }])
 
     def pause(self):
         self.__scheduler.pause()
@@ -84,22 +86,15 @@ class TradingService:
                                                                               ),
                     'short': True
                 }],
-            actions=[
-                {
-                    'type': 'button',
-                    'text': 'Pause',
-                    'url': URL_PAUSE
-                }, {
-                    'type': 'button',
-                    'text': 'Resume',
-                    'url': URL_RESUME
-                }]
         )
 
-    def do_trading(self, debug=False):
-        logger.debug('debug=%s', debug)
+    def do_trading(self):
+        prediction_debug = self.__config['debug']['prediction']
+        payment_debug = self.__config['debug']['payment']
+        logger.debug('Debug: prediction %s, payment %s', prediction_debug, payment_debug)
+
         trades = CoinTrader.get_trades(self.__currency)
-        prediction, dist = self.__agent.predict(trades, debug=debug)
+        prediction, dist = self.__agent.predict(trades, debug=prediction_debug)
         ticker = CoinTrader.ticker(self.__currency)
         latest_price = int(ticker['last'])
         qty = 0.0
@@ -108,7 +103,7 @@ class TradingService:
         if prediction == CoinAgent.Action.BUY:
             if self.__budget > 10:
                 qty = self.__budget / latest_price
-                status_code, error_code = CoinTrader.limit_buy(latest_price, self.__currency, qty, debug=debug)
+                status_code, error_code = CoinTrader.limit_buy(latest_price, self.__currency, qty, debug=payment_debug)
                 if status_code == 200 and error_code == 0:
                     self.__budget -= latest_price * qty
                     self.__num_coin += qty * (1.0 - self.__commission)
@@ -121,7 +116,7 @@ class TradingService:
         elif prediction == CoinAgent.Action.SELL:
             if self.__num_coin > 0.0001:
                 qty = self.__num_coin
-                status_code, error_code = CoinTrader.limit_sell(latest_price, self.__currency, qty, debug=debug)
+                status_code, error_code = CoinTrader.limit_sell(latest_price, self.__currency, qty, debug=payment_debug)
                 if status_code == 200 and error_code == 0:
                     self.__budget += latest_price * qty * (1.0 - self.__commission)
                     self.__num_coin -= qty
@@ -150,5 +145,6 @@ class TradingService:
                            portfolio=portfolio, daily=daily, total=total)
 
         if total < self.__criteria:
-            SlackNotification.notify('Coin Bot', 'danger', '전체 수익률이 -50.0% 이하로 떨어져 강제 종료 합니다.')
+            SlackNotification.notify(
+                'Coin Bot', 'danger', '전체 수익률이 {}% 이하로 떨어져 강제 종료 합니다.'.format(self.__criteria))
             self.stop()

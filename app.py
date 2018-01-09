@@ -1,13 +1,17 @@
+import configparser
+
 from flask import Flask
 
+from paths import Paths
 from trading_service import TradingService
 
 app = Flask(__name__)
-service = TradingService(
-    currency='xrp',
-    budget=10000,
-    criteria=-50.0
-)
+service = TradingService()
+
+
+@app.route("/")
+def index():
+    return 'Hello Coin Bot!'
 
 
 @app.route("/resume")
@@ -29,5 +33,13 @@ def pause():
 
 
 if __name__ == '__main__':
-    service.start(mins=60, debug=True)
-    app.run('localhost', 3000, debug=False)
+    config = configparser.ConfigParser()
+    config.read(Paths.CONFIG)
+
+    currency = config['server']['currency']
+    budget = config['server']['budget']
+    interval = config['server']['interval']
+    print('Currency: {}, Budget: {:,}, Interval: {} mins'.format(currency, budget, interval))
+
+    service.start(currency, budget=budget, mins=interval)
+    app.run(config['server']['host'], config['server']['port'], debug=False)

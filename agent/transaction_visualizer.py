@@ -2,7 +2,7 @@ import random
 
 import matplotlib.pyplot as plt
 
-from coin_agent import CoinAgent
+from agent.coin_agent import CoinAgent
 from paths import Paths
 
 

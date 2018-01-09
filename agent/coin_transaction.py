@@ -13,13 +13,13 @@ from boto3.dynamodb.conditions import Attr
 from paths import Paths
 
 
-class CoinTransactionDownloader:
+class CoinTransaction:
 
     class _DecimalEncoder(json.JSONEncoder):
         def default(self, obj):
             if isinstance(obj, decimal.Decimal):
                 return float(obj)
-            return super(CoinTransactionDownloader._DecimalEncoder, self).default(obj)
+            return super(CoinTransaction._DecimalEncoder, self).default(obj)
 
     @classmethod
     def download(cls, currency: str):
@@ -75,4 +75,4 @@ if __name__ == '__main__':
     parser.add_argument('currency')
     args = parser.parse_args()
 
-    CoinTransactionDownloader.download(args.currency)
+    CoinTransaction.download(args.currency)

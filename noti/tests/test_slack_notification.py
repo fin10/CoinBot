@@ -1,6 +1,6 @@
 import unittest
 
-from coin_agent import CoinAgent
+from agent.coin_agent import CoinAgent
 from noti.slack_notification import SlackNotification
 
 

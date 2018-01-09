@@ -2,8 +2,8 @@ import os
 import shutil
 import unittest
 
-from coin_agent import CoinAgent
-from dqn import DQN
+from agent.coin_agent import CoinAgent
+from agent.dqn import DQN
 from paths import Paths
 
 
