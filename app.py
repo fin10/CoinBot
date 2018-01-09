@@ -39,7 +39,8 @@ if __name__ == '__main__':
     currency = config['server']['currency']
     budget = config['server']['budget']
     interval = config['server']['interval']
-    print('Currency: {}, Budget: {:,}, Interval: {} mins'.format(currency, budget, interval))
+    criteria = config['server']['criteria']
+    print('Currency: {}, Budget: {:,}, Interval: {} mins, Criteria: {}%'.format(currency, budget, interval, criteria))
 
-    service.start(currency, budget=budget, mins=interval)
+    service.start(currency, budget=budget, mins=interval, criteria=criteria)
     app.run(config['server']['host'], config['server']['port'], debug=False)
