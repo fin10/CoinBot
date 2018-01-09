@@ -1,3 +1,4 @@
+import argparse
 import configparser
 import decimal
 import gzip
@@ -70,4 +71,8 @@ class CoinTransactionDownloader:
 
 
 if __name__ == '__main__':
-    CoinTransactionDownloader.download('eth')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('currency')
+    args = parser.parse_args()
+
+    CoinTransactionDownloader.download(args.currency)
