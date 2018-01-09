@@ -36,11 +36,14 @@ if __name__ == '__main__':
     config = configparser.ConfigParser()
     config.read(Paths.CONFIG)
 
+    host = config['server']['host']
+    port = config['server'].getint('port')
+
     currency = config['server']['currency']
-    budget = config['server']['budget']
-    interval = config['server']['interval']
-    criteria = config['server']['criteria']
-    print('Currency: {}, Budget: {:,}, Interval: {} mins, Criteria: {}%'.format(currency, budget, interval, criteria))
+    budget = config['server'].getint('budget')
+    interval = config['server'].getint('interval')
+    criteria = config['server'].getfloat('criteria')
+    print('Currency: {}, Budget: {:,f}, Interval: {} mins, Criteria: {}%'.format(currency, budget, interval, criteria))
 
     service.start(currency, budget=budget, mins=interval, criteria=criteria)
-    app.run(config['server']['host'], config['server']['port'], debug=False)
+    app.run(host, port, debug=False)

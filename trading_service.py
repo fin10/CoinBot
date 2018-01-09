@@ -89,8 +89,8 @@ class TradingService:
         )
 
     def do_trading(self):
-        prediction_debug = self.__config['debug']['prediction']
-        payment_debug = self.__config['debug']['payment']
+        prediction_debug = self.__config['debug'].getboolean('prediction')
+        payment_debug = self.__config['debug'].getboolean('payment')
         logger.debug('Debug: prediction %s, payment %s', prediction_debug, payment_debug)
 
         trades = CoinTrader.get_trades(self.__currency)
