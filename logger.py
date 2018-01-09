@@ -8,7 +8,7 @@ class Logger:
 
     @staticmethod
     def get_logger():
-        return logging.getLogger(__name__)
+        return logging.getLogger('coin.bot')
 
 
 logger = Logger.get_logger()

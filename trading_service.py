@@ -91,7 +91,7 @@ class TradingService:
     def do_trading(self):
         prediction_debug = self.__config['debug'].getboolean('prediction')
         payment_debug = self.__config['debug'].getboolean('payment')
-        logger.debug('Debug: prediction %s, payment %s', prediction_debug, payment_debug)
+        logger.info('Debug: prediction %s, payment %s', prediction_debug, payment_debug)
 
         trades = CoinTrader.get_trades(self.__currency)
         prediction, dist = self.__agent.predict(trades, debug=prediction_debug)
