@@ -46,6 +46,8 @@ class TradingService:
                 'short': True
         }])
 
+        self.do_trading()
+
     def pause(self):
         self.__scheduler.pause()
         SlackNotification.notify('Coin Bot', 'good', 'Server paused!')
