@@ -1,4 +1,3 @@
-import json
 import os
 import random
 import shutil
@@ -49,27 +48,9 @@ class CoinAgent:
                 num_coin -= 1
 
             portfolios.append(get_portfolio())
-            rewords.append((portfolios[-1] - portfolio) * 0.001)
+            rewords.append((portfolios[-1] - portfolio) * 0.1)
 
         return portfolios, rewords
-
-    @staticmethod
-    def get_transactions(path, currency, max_size=-1):
-        transaction_files = []
-        for root, dirs, files in os.walk(path, topdown=False):
-            for file in files:
-                if file.startswith(currency) and file.endswith('.json'):
-                    transaction_files.append(os.path.join(root, file))
-                if max_size > 0 and max_size == len(transaction_files):
-                    break
-        transaction_files.sort()
-
-        transactions = []
-        for file in transaction_files:
-            with open(file, encoding='utf-8') as fp:
-                transactions.append(json.load(fp)['orders'])
-
-        return transactions
 
     @staticmethod
     def __copy_model(src):
@@ -112,7 +93,7 @@ class CoinAgent:
                 n, result['global_step'], result['loss'],
                 portfolios[-1], Counter(actions), Counter([tuple(x) for x in action_dists]).most_common(2)))
 
-            if n > 0 and n % 5 == 0:
+            if n > 0 and n % 10 == 0:
                 copied = self.__copy_model(Paths.MODEL)
                 target_dqn = DQN(copied, len(self.actions))
 

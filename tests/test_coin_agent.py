@@ -5,6 +5,7 @@ import unittest
 import matplotlib.pyplot as plt
 
 from agent.coin_agent import CoinAgent
+from agent.coin_transaction import CoinTransaction
 from paths import Paths
 
 
@@ -15,22 +16,22 @@ class CoinAgentTest(unittest.TestCase):
         if os.path.exists(Paths.MODEL):
             shutil.rmtree(Paths.MODEL)
 
-        transactions = CoinAgent.get_transactions(Paths.DATA, 'eth')
+        transactions = CoinTransaction.get_transactions(Paths.DATA, 'xrp')
 
-        pivot = int(len(transactions) * 0.8)
-        train_set = transactions[:pivot]
-        test_set = transactions[pivot:]
-        print('Train: {:,}, Test: {:,}'.format(len(train_set), len(test_set)))
+        # pivot = int(len(transactions) * 0.8)
+        # train_set = transactions[:pivot]
+        # test_set = transactions[pivot:]
+        # print('Train: {:,}, Test: {:,}'.format(len(train_set), len(test_set)))
 
-        self.__agent.train(train_set, params={
+        self.__agent.train(transactions, params={
             'r': 0.9,
-            'epoch': 50
+            'epoch': 20
         })
 
-        portfolios = self.__agent.evaluate(test_set)
-        plt.plot(portfolios)
-
-        plt.show()
+        # portfolios = self.__agent.evaluate(test_set)
+        # plt.plot(portfolios)
+        #
+        # plt.show()
 
     def test_evaluate(self):
         portfolios = self.__agent.evaluate('eth')
@@ -38,5 +39,5 @@ class CoinAgentTest(unittest.TestCase):
         plt.show()
 
     def test_getting_transactions(self):
-        result = CoinAgent.get_transactions(Paths.DATA, 'eth')
+        result = CoinTransaction.get_transactions(Paths.DATA, 'eth')
         self.assertGreater(len(result), 0)

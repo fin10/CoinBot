@@ -21,6 +21,24 @@ class CoinTransaction:
                 return float(obj)
             return super(CoinTransaction._DecimalEncoder, self).default(obj)
 
+    @staticmethod
+    def get_transactions(path, currency, max_size=-1):
+        transaction_files = []
+        for root, dirs, files in os.walk(path, topdown=False):
+            for file in files:
+                if file.startswith(currency) and file.endswith('.json'):
+                    transaction_files.append(os.path.join(root, file))
+                if max_size > 0 and max_size == len(transaction_files):
+                    break
+        transaction_files.sort()
+
+        transactions = []
+        for file in transaction_files:
+            with open(file, encoding='utf-8') as fp:
+                transactions.append(json.load(fp)['orders'])
+
+        return transactions
+
     @classmethod
     def download(cls, currency: str):
         config = configparser.ConfigParser()

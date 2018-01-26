@@ -3,6 +3,7 @@ import shutil
 import unittest
 
 from agent.coin_agent import CoinAgent
+from agent.coin_transaction import CoinTransaction
 from agent.dqn import DQN
 from paths import Paths
 
@@ -15,7 +16,7 @@ class CoinAgentTest(unittest.TestCase):
 
     def test_generate_inputs(self):
         dqn = DQN(Paths.MODEL, len(CoinAgent.actions))
-        transactions = CoinAgent.get_transactions(Paths.DATA, 'eth', max_size=5)
+        transactions = CoinTransaction.get_transactions(Paths.DATA, 'eth', max_size=5)
 
         for result in dqn.generate_input(transactions, []):
             self.assertIsNotNone(result)

@@ -15,7 +15,7 @@ class DQN:
             'batch_size': 5000,
             'max_length': 100,
             'rnn_cell_size': 50,
-            'nn_cell_size': 20,
+            'nn_cell_size': 50,
             'learning_rate': 0.0001,
         }
 
@@ -156,7 +156,8 @@ class DQN:
                 kernel_initializer=tf.contrib.layers.xavier_initializer()
             )
 
-        outputs = dense(outputs, nn_cell_size)
+        for _ in range(3):
+            outputs = dense(outputs, nn_cell_size)
         outputs = dense(outputs, output_size)
 
         loss = None
